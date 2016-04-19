@@ -4,8 +4,11 @@ import simplepam
 import grp
 import pwd
 import functools
+import logging
 from datetime import datetime, timedelta
 from flask import request, abort
+
+logger = logging.getLogger('flask.ext.flask_pam')
 
 class Auth:
     """Plugin for Flask which implements PAM authentication with tokens."""
@@ -41,11 +44,13 @@ class Auth:
         :param password: password for username
         """
         if simplepam.authenticate(username, password):
+            logger.debug("user " + username + " authenticated")
             expire = datetime.now() + timedelta(minutes=30)
             token = self.token_type(request, username, expire)
             self.token_storage.set(token)
             return (True, token)
 
+        logger.debug("authentication failed")
         return (False, None)
 
     def authenticated(self, user_token):
@@ -56,8 +61,10 @@ class Auth:
         """
         token = self.token_storage.get(user_token)
         if token and token.validate(user_token):
+            logger.debug("user has a valid token")
             return True
 
+        logger.debug("user has invalid token")
         return False
 
     def group_authenticated(self, user_token, group):
@@ -71,6 +78,7 @@ class Auth:
             token = self.token_storage.get(user_token)
             groups = self.get_groups(token.username)
             if group in groups:
+                logger.info("user is in group " + group)
                 return True
 
         return False
@@ -83,6 +91,7 @@ class Auth:
         groups = []
         for group in grp.getgrall():
             if username in group.gr_mem:
+                logger.info("user " + username + " is in group " + group.gr_name)
                 groups.append(group.gr_name)
 
         return groups
@@ -95,6 +104,7 @@ class Auth:
         """
         @functools.wraps(view)
         def decorated(*args, **kwargs):
+            logger.info("running view which requires Flask-PAM authentication")
             if request.method == 'POST':
                 token = request.form['token']
                 if self.authenticated(token):
@@ -113,11 +123,13 @@ class Auth:
         def decorator(view):
             @functools.wraps(view)
             def decorated(*args, **kwargs):
+                logger.info("running view which requires being a member of group " + group)
                 if request.method == 'POST':
                     token = request.form['token']
                     if self.group_authenticated(token, group):
                         return view(*args, **kwargs)
-
+                
+                logger.warning("user has no access to view due to not being a member of group " + group)
                 return abort(403)
 
             return decorated
