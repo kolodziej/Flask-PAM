@@ -2,6 +2,7 @@
 
 import simplepam
 import grp
+import pwd
 import functools
 from datetime import datetime, timedelta
 from flask import request, abort
@@ -145,6 +146,9 @@ class Auth(object):
         :param username: name of Linux user
         """
         groups = []
+        gid = pwd.getpwnam(username).pw_gid
+        groups.append(grp.getgrgid(gid).gr_name)
+
         for group in grp.getgrall():
             if username in group.gr_mem:
                 groups.append(group.gr_name)
